@@ -56,6 +56,7 @@ const officeMarker = L.marker([OFFICE.lat, OFFICE.lon]).addTo(map);
 officeMarker.bindPopup(`<b>${OFFICE.name}</b><br/>Din startpunkt`).openPopup();
 
 const restaurantLayer = L.layerGroup().addTo(map);
+const sunLayer = L.layerGroup().addTo(map);
 let radiusCircle = null;
 
 function toRadians(value) {
@@ -85,6 +86,29 @@ function bearingDegrees(lat1, lon1, lat2, lon2) {
     Math.sin(phi1) * Math.cos(phi2) * Math.cos(lambda2 - lambda1);
   const brng = (Math.atan2(y, x) * 180) / Math.PI;
   return (brng + 360) % 360;
+}
+
+function destinationPoint(lat, lon, bearingDeg, distanceMeters) {
+  const angularDistance = distanceMeters / 6371000;
+  const bearingRad = toRadians(bearingDeg);
+  const lat1 = toRadians(lat);
+  const lon1 = toRadians(lon);
+
+  const lat2 = Math.asin(
+    Math.sin(lat1) * Math.cos(angularDistance) +
+      Math.cos(lat1) * Math.sin(angularDistance) * Math.cos(bearingRad)
+  );
+  const lon2 =
+    lon1 +
+    Math.atan2(
+      Math.sin(bearingRad) * Math.sin(angularDistance) * Math.cos(lat1),
+      Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2)
+    );
+
+  return {
+    lat: (lat2 * 180) / Math.PI,
+    lon: (lon2 * 180) / Math.PI,
+  };
 }
 
 function angleDifference(a, b) {
@@ -171,6 +195,57 @@ function getSunGradientColors(sunScore) {
     pillBg: `hsl(${hue}, 90%, 92%)`,
     pillText: `hsl(${hue}, 70%, 24%)`,
   };
+}
+
+function getSunGeometry(dateTime) {
+  const sunPosition = SunCalc.getPosition(dateTime, OFFICE.lat, OFFICE.lon);
+  return {
+    sunAzimuthDeg: ((sunPosition.azimuth * 180) / Math.PI + 180 + 360) % 360,
+    sunAltitudeDeg: (sunPosition.altitude * 180) / Math.PI,
+  };
+}
+
+function drawSunDirection(sunAzimuthDeg, sunAltitudeDeg, radiusMeters) {
+  sunLayer.clearLayers();
+  if (sunAltitudeDeg <= 0) {
+    return;
+  }
+
+  const rayLengthMeters = Math.max(180, Math.min(900, radiusMeters * 0.75));
+  const endPoint = destinationPoint(
+    OFFICE.lat,
+    OFFICE.lon,
+    sunAzimuthDeg,
+    rayLengthMeters
+  );
+  const ray = L.polyline(
+    [
+      [OFFICE.lat, OFFICE.lon],
+      [endPoint.lat, endPoint.lon],
+    ],
+    {
+      color: "#f4a300",
+      weight: 4,
+      opacity: 0.9,
+      dashArray: "10 8",
+      lineCap: "round",
+    }
+  ).addTo(sunLayer);
+  ray.bindPopup(
+    `Solriktning: ${Math.round(sunAzimuthDeg)}°<br/>Solhöjd: ${sunAltitudeDeg.toFixed(
+      1
+    )}°`
+  );
+
+  const sunIcon = L.divIcon({
+    className: "sun-marker-icon",
+    html: '<div class="sun-marker">☀</div>',
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+  });
+  L.marker([endPoint.lat, endPoint.lon], { icon: sunIcon })
+    .bindPopup("Härifrån kommer solen in mot området.")
+    .addTo(sunLayer);
 }
 
 function renderRestaurants(restaurants) {
@@ -418,9 +493,7 @@ function shadeRiskLabel(shadeRisk) {
 }
 
 function calculateSunRank(restaurants, dateTime, cloudCover, buildings) {
-  const sunPosition = SunCalc.getPosition(dateTime, OFFICE.lat, OFFICE.lon);
-  const sunAzimuthDeg = ((sunPosition.azimuth * 180) / Math.PI + 180 + 360) % 360;
-  const sunAltitudeDeg = (sunPosition.altitude * 180) / Math.PI;
+  const { sunAzimuthDeg, sunAltitudeDeg } = getSunGeometry(dateTime);
   const skyFactor = Math.max(0, 1 - cloudCover / 100);
   const weatherFactor = 0.35 + skyFactor * 0.65;
   const isSunAboveHorizon = sunAltitudeDeg > 0;
@@ -493,6 +566,8 @@ async function loadAndRender() {
     const radius = Number(radiusInput.value);
     const dateTime = getSelectedDateTime();
     drawRadiusCircle(radius);
+    const { sunAzimuthDeg, sunAltitudeDeg } = getSunGeometry(dateTime);
+    drawSunDirection(sunAzimuthDeg, sunAltitudeDeg, radius);
 
     const buildingPromise = fetchBuildings(radius)
       .then((buildings) => ({ buildings, buildingDataAvailable: true }))
@@ -508,10 +583,13 @@ async function loadAndRender() {
       statusText.textContent = "Hittade inga restauranger i vald radie.";
       resultsList.innerHTML = "";
       restaurantLayer.clearLayers();
+      sunText.textContent = `Solens riktning: ${Math.round(
+        sunAzimuthDeg
+      )}° | Solhöjd: ${sunAltitudeDeg.toFixed(1)}°`;
       return;
     }
 
-    const { ranked, sunAzimuthDeg, sunAltitudeDeg, averageShadeRisk } =
+    const { ranked, averageShadeRisk } =
       calculateSunRank(
       restaurants,
       dateTime,
