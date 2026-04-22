@@ -98,6 +98,66 @@ function getSelectedDateTime() {
   return new Date(`${dateStr}T${timeStr}:00`);
 }
 
+function parseHeightMeters(tags) {
+  const rawHeight = tags?.height;
+  if (rawHeight) {
+    const parsed = Number.parseFloat(String(rawHeight).replace(",", "."));
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+
+  const rawLevels = tags?.["building:levels"];
+  if (rawLevels) {
+    const levels = Number.parseFloat(String(rawLevels).replace(",", "."));
+    if (Number.isFinite(levels) && levels > 0) {
+      return levels * 3.2;
+    }
+  }
+
+  return 12;
+}
+
+function getCentroid(geometry) {
+  if (!Array.isArray(geometry) || geometry.length < 3) {
+    return null;
+  }
+  const validPoints = geometry.filter(
+    (point) => typeof point.lat === "number" && typeof point.lon === "number"
+  );
+  if (validPoints.length < 3) {
+    return null;
+  }
+
+  const sum = validPoints.reduce(
+    (acc, point) => {
+      acc.lat += point.lat;
+      acc.lon += point.lon;
+      return acc;
+    },
+    { lat: 0, lon: 0 }
+  );
+
+  return {
+    lat: sum.lat / validPoints.length,
+    lon: sum.lon / validPoints.length,
+  };
+}
+
+function estimateFootprintRadiusMeters(geometry, centroid) {
+  if (!centroid) {
+    return 6;
+  }
+
+  let maxRadius = 0;
+  geometry.forEach((point) => {
+    const radius = haversineMeters(centroid.lat, centroid.lon, point.lat, point.lon);
+    maxRadius = Math.max(maxRadius, radius);
+  });
+
+  return Math.max(6, maxRadius);
+}
+
 function renderRestaurants(restaurants) {
   resultsList.innerHTML = "";
   restaurantLayer.clearLayers();
@@ -114,6 +174,7 @@ function renderRestaurants(restaurants) {
     item.innerHTML = `
       <h3>${restaurant.name}</h3>
       <p><strong>Solpoäng:</strong> ${restaurant.sunScore}/100 <span class="${scoreClass}">${restaurant.sunLabel}</span></p>
+      <p><strong>Skuggrisk:</strong> ${restaurant.shadeRiskLabel}</p>
       <p><strong>Avstånd:</strong> ${Math.round(restaurant.distance)} m</p>
       <p><strong>Riktning från kontoret:</strong> ${restaurant.directionText}</p>
       <p class="source-note">${restaurant.note}</p>
@@ -140,6 +201,45 @@ function drawRadiusCircle(radiusMeters) {
     color: "#2d6fbf",
     weight: 1,
   }).addTo(map);
+}
+
+async function fetchBuildings(radiusMeters) {
+  const query = `
+    [out:json][timeout:30];
+    (
+      way["building"](around:${radiusMeters},${OFFICE.lat},${OFFICE.lon});
+    );
+    out tags geom;
+  `;
+
+  const response = await fetch("https://overpass-api.de/api/interpreter", {
+    method: "POST",
+    body: query,
+    headers: {
+      "Content-Type": "text/plain;charset=UTF-8",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error("Kunde inte hämta byggnadsdata från OpenStreetMap.");
+  }
+
+  const data = await response.json();
+  return (data.elements ?? [])
+    .map((element) => {
+      const centroid = getCentroid(element.geometry);
+      if (!centroid) {
+        return null;
+      }
+
+      return {
+        id: `building-${element.id}`,
+        centroid,
+        footprintRadius: estimateFootprintRadiusMeters(element.geometry, centroid),
+        heightMeters: parseHeightMeters(element.tags),
+      };
+    })
+    .filter(Boolean);
 }
 
 async function fetchRestaurants(radiusMeters) {
@@ -223,13 +323,95 @@ function getDirectionText(angle) {
   return dirs[index];
 }
 
-function calculateSunRank(restaurants, dateTime, cloudCover) {
+function estimateBuildingShadeRisk(
+  restaurant,
+  buildings,
+  sunAzimuthDeg,
+  sunAltitudeDeg
+) {
+  if (sunAltitudeDeg <= 0 || !buildings.length) {
+    return 0;
+  }
+
+  const altitudeRadians = toRadians(Math.max(1, sunAltitudeDeg));
+  const shadowDirectionDeg = (sunAzimuthDeg + 180) % 360;
+  const maxShadowSearchDistance = Math.min(500, 120 / Math.tan(altitudeRadians));
+
+  let strongestRisk = 0;
+
+  buildings.forEach((building) => {
+    const centerDistance = haversineMeters(
+      building.centroid.lat,
+      building.centroid.lon,
+      restaurant.lat,
+      restaurant.lon
+    );
+
+    // Many OSM restaurant points are mapped at a building center.
+    // Skip that host building to avoid inflated self-shadow penalties.
+    if (centerDistance <= building.footprintRadius + 1) {
+      return;
+    }
+
+    if (
+      centerDistance >
+      maxShadowSearchDistance + building.footprintRadius + 20
+    ) {
+      return;
+    }
+
+    const edgeDistance = Math.max(0, centerDistance - building.footprintRadius);
+    const shadowLength = building.heightMeters / Math.tan(altitudeRadians);
+    if (edgeDistance > shadowLength + 8) {
+      return;
+    }
+
+    const buildingToRestaurant = bearingDegrees(
+      building.centroid.lat,
+      building.centroid.lon,
+      restaurant.lat,
+      restaurant.lon
+    );
+    const angleToShadow = angleDifference(buildingToRestaurant, shadowDirectionDeg);
+    const spread = Math.min(
+      85,
+      12 + ((building.footprintRadius + 3) / Math.max(4, edgeDistance)) * 60
+    );
+    if (angleToShadow > spread) {
+      return;
+    }
+
+    const directionalFactor = Math.max(0, 1 - angleToShadow / spread);
+    const distanceFactor = Math.max(0, 1 - edgeDistance / (shadowLength + 0.1));
+    const heightFactor = Math.min(1.25, building.heightMeters / 20);
+    const risk = directionalFactor * distanceFactor * heightFactor;
+
+    strongestRisk = Math.max(strongestRisk, risk);
+  });
+
+  return Math.max(0, Math.min(1, strongestRisk));
+}
+
+function shadeRiskLabel(shadeRisk) {
+  if (shadeRisk >= 0.7) {
+    return "Hög (byggnadsskugga sannolik)";
+  }
+  if (shadeRisk >= 0.4) {
+    return "Medel (viss skuggrisk)";
+  }
+  return "Låg (mer öppet mot solen)";
+}
+
+function calculateSunRank(restaurants, dateTime, cloudCover, buildings) {
   const sunPosition = SunCalc.getPosition(dateTime, OFFICE.lat, OFFICE.lon);
   const sunAzimuthDeg = ((sunPosition.azimuth * 180) / Math.PI + 180 + 360) % 360;
   const sunAltitudeDeg = (sunPosition.altitude * 180) / Math.PI;
-
-  const cloudPenalty = Math.min(40, Math.round((cloudCover / 100) * 40));
+  const skyFactor = Math.max(0, 1 - cloudCover / 100);
+  const weatherFactor = 0.35 + skyFactor * 0.65;
   const isSunAboveHorizon = sunAltitudeDeg > 0;
+  const altitudeFactor = Math.max(0, Math.min(1, sunAltitudeDeg / 35));
+
+  let totalShadeRisk = 0;
 
   const ranked = restaurants
     .map((restaurant) => {
@@ -245,28 +427,24 @@ function calculateSunRank(restaurants, dateTime, cloudCover) {
         restaurant.lat,
         restaurant.lon
       );
-      const directionDifference = angleDifference(bearing, sunAzimuthDeg);
-
-      const directionalScore = Math.max(
-        0,
-        Math.round(60 - (directionDifference / 180) * 60)
+      const shadeRisk = estimateBuildingShadeRisk(
+        restaurant,
+        buildings,
+        sunAzimuthDeg,
+        sunAltitudeDeg
       );
-      const altitudeBonus = Math.max(
-        0,
-        Math.min(20, Math.round((sunAltitudeDeg / 40) * 20))
-      );
-      const distanceBonus = Math.max(0, Math.round(20 - distance / 80));
+      totalShadeRisk += shadeRisk;
 
-      let sunScore = directionalScore + altitudeBonus + distanceBonus - cloudPenalty;
-      if (!isSunAboveHorizon) {
-        sunScore = 0;
-      }
-      sunScore = Math.max(0, Math.min(100, sunScore));
+      const lightAccessFactor = 1 - shadeRisk;
+      const sunlightStrength = isSunAboveHorizon
+        ? weatherFactor * lightAccessFactor * (0.65 + altitudeFactor * 0.35)
+        : 0;
+      const sunScore = Math.round(Math.max(0, Math.min(1, sunlightStrength)) * 100);
 
       let sunLabel = "Lägre chans för sol";
-      if (sunScore >= 70) {
+      if (sunScore >= 75) {
         sunLabel = "Mycket bra solläge";
-      } else if (sunScore >= 45) {
+      } else if (sunScore >= 50) {
         sunLabel = "Möjligt solläge";
       }
 
@@ -274,9 +452,10 @@ function calculateSunRank(restaurants, dateTime, cloudCover) {
         ...restaurant,
         sunScore,
         sunLabel,
+        shadeRiskLabel: shadeRiskLabel(shadeRisk),
         distance,
         directionText: getDirectionText(bearing),
-        note: "Solpoängen är en uppskattning baserad på solens riktning, höjd, molnighet och restaurangens läge.",
+        note: "Solpoängen uppskattas från solhöjd, molnighet och om byggnader i solens riktning kan kasta skugga på platsen.",
       };
     })
     .sort((a, b) => b.sunScore - a.sunScore || a.distance - b.distance);
@@ -285,6 +464,7 @@ function calculateSunRank(restaurants, dateTime, cloudCover) {
     ranked,
     sunAzimuthDeg,
     sunAltitudeDeg,
+    averageShadeRisk: restaurants.length ? totalShadeRisk / restaurants.length : 0,
   };
 }
 
@@ -299,9 +479,14 @@ async function loadAndRender() {
     const dateTime = getSelectedDateTime();
     drawRadiusCircle(radius);
 
-    const [restaurants, cloudCover] = await Promise.all([
+    const buildingPromise = fetchBuildings(radius)
+      .then((buildings) => ({ buildings, buildingDataAvailable: true }))
+      .catch(() => ({ buildings: [], buildingDataAvailable: false }));
+
+    const [restaurants, cloudCover, buildingResult] = await Promise.all([
       fetchRestaurants(radius),
       fetchCloudCover(dateTime),
+      buildingPromise,
     ]);
 
     if (!restaurants.length) {
@@ -311,10 +496,12 @@ async function loadAndRender() {
       return;
     }
 
-    const { ranked, sunAzimuthDeg, sunAltitudeDeg } = calculateSunRank(
+    const { ranked, sunAzimuthDeg, sunAltitudeDeg, averageShadeRisk } =
+      calculateSunRank(
       restaurants,
       dateTime,
-      cloudCover
+      cloudCover,
+      buildingResult.buildings
     );
 
     renderRestaurants(ranked.slice(0, 25));
@@ -326,9 +513,14 @@ async function loadAndRender() {
     sunText.textContent = `Solens riktning: ${Math.round(
       sunAzimuthDeg
     )}° | Solhöjd: ${sunAltitudeDeg.toFixed(1)}°`;
+    const shadeSummary = buildingResult.buildingDataAvailable
+      ? `Genomsnittlig skuggrisk i området: ${Math.round(
+          averageShadeRisk * 100
+        )}%.`
+      : "Byggnadsdata kunde inte hämtas, så skuggrisk är förenklad.";
     weatherText.textContent = `Molnighet enligt prognos: ${Math.round(
       cloudCover
-    )}%. Solpoäng är en uppskattning, inte en garanti för uteservering i direkt sol.`;
+    )}%. ${shadeSummary}`;
   } catch (error) {
     statusText.textContent = error.message;
     resultsList.innerHTML = "";
