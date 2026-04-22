@@ -46,17 +46,11 @@
         <p id="statusText">Laddar kartan...</p>
         <p id="sunText"></p>
         <p id="weatherText"></p>
-        <p class="map-legend">
-          <span class="legend-item">
-            <span class="legend-dot high"></span> Hög solpoäng (75-100)
-          </span>
-          <span class="legend-item">
-            <span class="legend-dot medium"></span> Medel solpoäng (50-74)
-          </span>
-          <span class="legend-item">
-            <span class="legend-dot low"></span> Lägre solpoäng (0-49)
-          </span>
-        </p>
+        <div class="map-legend">
+          <span class="legend-label">Lägre solpoäng</span>
+          <span class="legend-gradient" aria-hidden="true"></span>
+          <span class="legend-label">Högre solpoäng</span>
+        </div>
       </section>
 
       <section id="map" aria-label="Karta med restauranger"></section>

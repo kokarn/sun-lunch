@@ -158,31 +158,18 @@ function estimateFootprintRadiusMeters(geometry, centroid) {
   return Math.max(6, maxRadius);
 }
 
-function getSunBand(sunScore) {
-  if (sunScore >= 75) {
-    return {
-      label: "Hög solchans",
-      pillClass: "score-pill",
-      markerFill: "#2fb363",
-      markerStroke: "#1d7a3c",
-      markerRadius: 7,
-    };
-  }
-  if (sunScore >= 50) {
-    return {
-      label: "Mellan solchans",
-      pillClass: "score-pill medium",
-      markerFill: "#f7b500",
-      markerStroke: "#9a6200",
-      markerRadius: 6,
-    };
-  }
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function getSunGradientColors(sunScore) {
+  const ratio = clamp(sunScore / 100, 0, 1);
+  const hue = Math.round(ratio * 120);
   return {
-    label: "Låg solchans",
-    pillClass: "score-pill low",
-    markerFill: "#7a8899",
-    markerStroke: "#5c6777",
-    markerRadius: 5,
+    markerFill: `hsl(${hue}, 80%, 50%)`,
+    markerStroke: `hsl(${hue}, 80%, 35%)`,
+    pillBg: `hsl(${hue}, 90%, 92%)`,
+    pillText: `hsl(${hue}, 70%, 24%)`,
   };
 }
 
@@ -191,12 +178,12 @@ function renderRestaurants(restaurants) {
   restaurantLayer.clearLayers();
 
   restaurants.forEach((restaurant) => {
-    const sunBand = getSunBand(restaurant.sunScore);
+    const colorScale = getSunGradientColors(restaurant.sunScore);
     const item = document.createElement("li");
     item.className = "result-card";
     item.innerHTML = `
       <h3>${restaurant.name}</h3>
-      <p><strong>Solpoäng:</strong> ${restaurant.sunScore}/100 <span class="${sunBand.pillClass}">${restaurant.sunLabel}</span></p>
+      <p><strong>Solpoäng:</strong> ${restaurant.sunScore}/100 <span class="score-pill" style="--pill-bg: ${colorScale.pillBg}; --pill-color: ${colorScale.pillText}; --pill-border: ${colorScale.markerStroke};">${restaurant.sunLabel}</span></p>
       <p><strong>Skuggrisk:</strong> ${restaurant.shadeRiskLabel}</p>
       <p><strong>Avstånd:</strong> ${Math.round(restaurant.distance)} m</p>
       <p><strong>Riktning från kontoret:</strong> ${restaurant.directionText}</p>
@@ -205,14 +192,14 @@ function renderRestaurants(restaurants) {
     `;
     resultsList.appendChild(item);
     const marker = L.circleMarker([restaurant.lat, restaurant.lon], {
-      radius: sunBand.markerRadius,
-      color: sunBand.markerStroke,
+      radius: 6,
+      color: colorScale.markerStroke,
       weight: 1.5,
-      fillColor: sunBand.markerFill,
+      fillColor: colorScale.markerFill,
       fillOpacity: 0.85,
     });
     marker.bindPopup(
-      `<b>${restaurant.name}</b><br/>Solpoäng: ${restaurant.sunScore}/100<br/>${sunBand.label}<br/>Avstånd: ${Math.round(restaurant.distance)} m`
+      `<b>${restaurant.name}</b><br/>Solpoäng: ${restaurant.sunScore}/100<br/>Avstånd: ${Math.round(restaurant.distance)} m`
     );
     restaurantLayer.addLayer(marker);
   });

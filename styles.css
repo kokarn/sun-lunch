@@ -103,16 +103,18 @@ button:hover {
   box-shadow: 0 0 0 1px #62758f;
 }
 
-.legend-dot.top {
-  background: #2fb363;
-}
-
-.legend-dot.filtered {
-  background: #f0b429;
-}
-
-.legend-dot.low {
-  background: #b0b7c3;
+.legend-gradient {
+  display: inline-block;
+  width: 9rem;
+  height: 0.7rem;
+  border-radius: 999px;
+  border: 1px solid #62758f;
+  background: linear-gradient(
+    90deg,
+    hsl(0deg 78% 45%) 0%,
+    hsl(45deg 95% 52%) 50%,
+    hsl(120deg 58% 42%) 100%
+  );
 }
 
 #results {
@@ -155,16 +157,7 @@ button:hover {
   font-size: 0.8rem;
   padding: 0.12rem 0.4rem;
   border-radius: 999px;
-  background: #d8f0dd;
-  color: #2f5d36;
-}
-
-.score-pill.medium {
-  background: #ffefcc;
-  color: #8a6400;
-}
-
-.score-pill.low {
-  background: #f8d8d8;
-  color: #8f2828;
+  border: 1px solid color-mix(in srgb, var(--pill-color, #6f7784) 60%, #000 40%);
+  background: color-mix(in srgb, var(--pill-color, #6f7784) 22%, #ffffff 78%);
+  color: color-mix(in srgb, var(--pill-color, #6f7784) 35%, #000 65%);
 }
