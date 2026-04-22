@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="sv">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sol-lunch vid Vasagatan 7</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="controls">
+        <label>
+          Radie (meter)
+          <select id="radiusInput">
+            <option value="800">800</option>
+            <option value="1200" selected>1200</option>
+            <option value="1600">1600</option>
+          </select>
+        </label>
+        <button id="loadButton" type="button">Uppdatera med aktuell tid</button>
+      </section>
+
+      <section class="info">
+        <p id="currentTimeText"></p>
+        <p id="statusText">Laddar kartan...</p>
+        <p id="sunText"></p>
+        <p id="weatherText"></p>
+        <div class="map-legend">
+          <span class="legend-label">Lägre solpoäng</span>
+          <span class="legend-gradient" aria-hidden="true"></span>
+          <span class="legend-label">Högre solpoäng</span>
+        </div>
+      </section>
+
+      <section class="map-wrapper">
+        <section id="map" aria-label="Karta med restauranger"></section>
+      </section>
+      <section>
+        <h2>Resultat</h2>
+        <ol id="results"></ol>
+      </section>
+    </main>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script src="https://unpkg.com/suncalc@1.9.0/suncalc.js"></script>
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>
