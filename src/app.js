@@ -47,10 +47,19 @@ dateInput.value = formatLocalDate(today);
 timeInput.value = "12:00";
 
 const map = L.map("map").setView([OFFICE.lat, OFFICE.lon], 15);
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom: 19,
-  attribution: "&copy; OpenStreetMap contributors",
+map.createPane("mutedBase");
+const mutedBasePane = map.getPane("mutedBase");
+if (mutedBasePane) {
+  mutedBasePane.style.filter = "saturate(0.4) contrast(0.88) brightness(1.05)";
+  mutedBasePane.style.opacity = "0.9";
+}
+L.tileLayer("https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png", {
+  pane: "mutedBase",
+  maxZoom: 20,
+  subdomains: "abcd",
+  attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
 }).addTo(map);
+map.getContainer().classList.add("muted-map");
 
 const officeMarker = L.marker([OFFICE.lat, OFFICE.lon]).addTo(map);
 officeMarker.bindPopup(`<b>${OFFICE.name}</b><br/>Din startpunkt`).openPopup();

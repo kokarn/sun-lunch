@@ -105,6 +105,10 @@ button:hover {
   overflow: hidden;
 }
 
+#map .leaflet-tile {
+  filter: saturate(0.5) contrast(0.82) brightness(1.08);
+}
+
 .map-legend {
   display: flex;
   gap: 0.7rem;
