@@ -108,7 +108,11 @@ button:hover {
 }
 
 .legend-dot.filtered {
-  background: #7a8899;
+  background: #f0b429;
+}
+
+.legend-dot.low {
+  background: #b0b7c3;
 }
 
 #results {

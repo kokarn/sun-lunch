@@ -7,7 +7,6 @@ const OFFICE = {
 const statusText = document.querySelector("#statusText");
 const sunText = document.querySelector("#sunText");
 const weatherText = document.querySelector("#weatherText");
-const mapLegendText = document.querySelector("#mapLegendText");
 const dateInput = document.querySelector("#dateInput");
 const timeInput = document.querySelector("#timeInput");
 const radiusInput = document.querySelector("#radiusInput");
@@ -159,22 +158,45 @@ function estimateFootprintRadiusMeters(geometry, centroid) {
   return Math.max(6, maxRadius);
 }
 
-function renderRestaurants(displayedRestaurants, allRestaurants) {
+function getSunBand(sunScore) {
+  if (sunScore >= 75) {
+    return {
+      label: "Hög solchans",
+      pillClass: "score-pill",
+      markerFill: "#2fb363",
+      markerStroke: "#1d7a3c",
+      markerRadius: 7,
+    };
+  }
+  if (sunScore >= 50) {
+    return {
+      label: "Mellan solchans",
+      pillClass: "score-pill medium",
+      markerFill: "#f7b500",
+      markerStroke: "#9a6200",
+      markerRadius: 6,
+    };
+  }
+  return {
+    label: "Låg solchans",
+    pillClass: "score-pill low",
+    markerFill: "#7a8899",
+    markerStroke: "#5c6777",
+    markerRadius: 5,
+  };
+}
+
+function renderRestaurants(restaurants) {
   resultsList.innerHTML = "";
   restaurantLayer.clearLayers();
 
-  displayedRestaurants.forEach((restaurant) => {
-    const scoreClass =
-      restaurant.sunScore >= 70
-        ? "score-pill"
-        : restaurant.sunScore >= 45
-          ? "score-pill medium"
-          : "score-pill low";
+  restaurants.forEach((restaurant) => {
+    const sunBand = getSunBand(restaurant.sunScore);
     const item = document.createElement("li");
     item.className = "result-card";
     item.innerHTML = `
       <h3>${restaurant.name}</h3>
-      <p><strong>Solpoäng:</strong> ${restaurant.sunScore}/100 <span class="${scoreClass}">${restaurant.sunLabel}</span></p>
+      <p><strong>Solpoäng:</strong> ${restaurant.sunScore}/100 <span class="${sunBand.pillClass}">${restaurant.sunLabel}</span></p>
       <p><strong>Skuggrisk:</strong> ${restaurant.shadeRiskLabel}</p>
       <p><strong>Avstånd:</strong> ${Math.round(restaurant.distance)} m</p>
       <p><strong>Riktning från kontoret:</strong> ${restaurant.directionText}</p>
@@ -182,27 +204,17 @@ function renderRestaurants(displayedRestaurants, allRestaurants) {
       <a href="https://www.openstreetmap.org/?mlat=${restaurant.lat}&mlon=${restaurant.lon}#map=18/${restaurant.lat}/${restaurant.lon}" target="_blank" rel="noreferrer">Öppna i OpenStreetMap</a>
     `;
     resultsList.appendChild(item);
-  });
-
-  const displayedIds = new Set(displayedRestaurants.map((restaurant) => restaurant.id));
-
-  allRestaurants.forEach((restaurant) => {
-    const isDisplayed = displayedIds.has(restaurant.id);
     const marker = L.circleMarker([restaurant.lat, restaurant.lon], {
-      radius: isDisplayed ? 7 : 5,
-      color: isDisplayed ? "#9a6200" : "#6f7784",
+      radius: sunBand.markerRadius,
+      color: sunBand.markerStroke,
       weight: 1.5,
-      fillColor: isDisplayed ? "#f7b500" : "#aeb5c0",
-      fillOpacity: isDisplayed ? 0.9 : 0.55,
+      fillColor: sunBand.markerFill,
+      fillOpacity: 0.85,
     });
-    const listState = isDisplayed ? "Visas i topplistan" : "Utanför topplistan";
     marker.bindPopup(
-      `<b>${restaurant.name}</b><br/>Solpoäng: ${restaurant.sunScore}/100<br/>${listState}<br/>Avstånd: ${Math.round(restaurant.distance)} m`
+      `<b>${restaurant.name}</b><br/>Solpoäng: ${restaurant.sunScore}/100<br/>${sunBand.label}<br/>Avstånd: ${Math.round(restaurant.distance)} m`
     );
     restaurantLayer.addLayer(marker);
-    if (isDisplayed) {
-      marker.bringToFront();
-    }
   });
 }
 
@@ -509,9 +521,6 @@ async function loadAndRender() {
       statusText.textContent = "Hittade inga restauranger i vald radie.";
       resultsList.innerHTML = "";
       restaurantLayer.clearLayers();
-      if (mapLegendText) {
-        mapLegendText.textContent = "Kartmarkörer visas när restauranger hittas.";
-      }
       return;
     }
 
@@ -523,10 +532,9 @@ async function loadAndRender() {
       buildingResult.buildings
     );
 
-    const displayedRestaurants = ranked.slice(0, 25);
-    renderRestaurants(displayedRestaurants, ranked);
+    renderRestaurants(ranked);
 
-    statusText.textContent = `Visar ${displayedRestaurants.length} av ${ranked.length} i listan. Alla ${ranked.length} restauranger markeras på kartan.`;
+    statusText.textContent = `Visar ${ranked.length} restauranger, sorterade på solpoäng. Alla är markerade på kartan.`;
     sunText.textContent = `Solens riktning: ${Math.round(
       sunAzimuthDeg
     )}° | Solhöjd: ${sunAltitudeDeg.toFixed(1)}°`;
@@ -538,18 +546,10 @@ async function loadAndRender() {
     weatherText.textContent = `Molnighet enligt prognos: ${Math.round(
       cloudCover
     )}%. ${shadeSummary}`;
-    if (mapLegendText) {
-      mapLegendText.textContent = `Kartmarkörer: ${displayedRestaurants.length} gula = topplista, ${
-        ranked.length - displayedRestaurants.length
-      } grå = utanför topplistan.`;
-    }
   } catch (error) {
     statusText.textContent = error.message;
     resultsList.innerHTML = "";
     restaurantLayer.clearLayers();
-    if (mapLegendText) {
-      mapLegendText.textContent = "Kartmarkörer kunde inte uppdateras just nu.";
-    }
   } finally {
     loadButton.disabled = false;
   }
