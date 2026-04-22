@@ -50,6 +50,7 @@ const map = L.map("map").setView([OFFICE.lat, OFFICE.lon], 15);
 map.createPane("mutedBase");
 const mutedBasePane = map.getPane("mutedBase");
 if (mutedBasePane) {
+  mutedBasePane.style.zIndex = "180";
   mutedBasePane.style.filter = "saturate(0.4) contrast(0.88) brightness(1.05)";
   mutedBasePane.style.opacity = "0.9";
 }
