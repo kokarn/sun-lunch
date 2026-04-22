@@ -111,9 +111,13 @@ function destinationPoint(lat, lon, bearingDeg, distanceMeters) {
   };
 }
 
-function angleDifference(a, b) {
-  const raw = Math.abs(a - b) % 360;
-  return raw > 180 ? 360 - raw : raw;
+function projectToLocalMeters(lat, lon, originLat, originLon) {
+  const metersPerDegLat = 110540;
+  const metersPerDegLon = 111320 * Math.cos(toRadians(originLat));
+  return {
+    x: (lon - originLon) * metersPerDegLon,
+    y: (lat - originLat) * metersPerDegLat,
+  };
 }
 
 function getCurrentDateTime() {
@@ -436,10 +440,19 @@ function estimateBuildingShadeRisk(
   }
 
   const altitudeRadians = toRadians(Math.max(1, sunAltitudeDeg));
-  const shadowDirectionDeg = (sunAzimuthDeg + 180) % 360;
-  const maxShadowSearchDistance = Math.min(500, 120 / Math.tan(altitudeRadians));
+  const sunBearingRadians = toRadians(sunAzimuthDeg);
+  const sunVector = {
+    x: Math.sin(sunBearingRadians),
+    y: Math.cos(sunBearingRadians),
+  };
+  const projectedRestaurant = projectToLocalMeters(
+    restaurant.lat,
+    restaurant.lon,
+    restaurant.lat,
+    restaurant.lon
+  );
 
-  let strongestRisk = 0;
+  let combinedOcclusion = 0;
 
   buildings.forEach((building) => {
     const centerDistance = haversineMeters(
@@ -455,43 +468,47 @@ function estimateBuildingShadeRisk(
       return;
     }
 
-    if (
-      centerDistance >
-      maxShadowSearchDistance + building.footprintRadius + 20
-    ) {
-      return;
-    }
-
-    const edgeDistance = Math.max(0, centerDistance - building.footprintRadius);
-    const shadowLength = building.heightMeters / Math.tan(altitudeRadians);
-    if (edgeDistance > shadowLength + 8) {
-      return;
-    }
-
-    const buildingToRestaurant = bearingDegrees(
+    const projectedBuilding = projectToLocalMeters(
       building.centroid.lat,
       building.centroid.lon,
       restaurant.lat,
       restaurant.lon
     );
-    const angleToShadow = angleDifference(buildingToRestaurant, shadowDirectionDeg);
-    const spread = Math.min(
-      85,
-      12 + ((building.footprintRadius + 3) / Math.max(4, edgeDistance)) * 60
-    );
-    if (angleToShadow > spread) {
+    const relative = {
+      x: projectedBuilding.x - projectedRestaurant.x,
+      y: projectedBuilding.y - projectedRestaurant.y,
+    };
+    const alongSun = relative.x * sunVector.x + relative.y * sunVector.y;
+    if (alongSun <= 0) {
       return;
     }
 
-    const directionalFactor = Math.max(0, 1 - angleToShadow / spread);
-    const distanceFactor = Math.max(0, 1 - edgeDistance / (shadowLength + 0.1));
-    const heightFactor = Math.min(1.25, building.heightMeters / 20);
-    const risk = directionalFactor * distanceFactor * heightFactor;
+    const crossSun = Math.abs(relative.x * sunVector.y - relative.y * sunVector.x);
+    const lateralAllowance = building.footprintRadius + 4;
+    if (crossSun > lateralAllowance) {
+      return;
+    }
 
-    strongestRisk = Math.max(strongestRisk, risk);
+    const blockingDistance = Math.max(1, alongSun - building.footprintRadius);
+    const apparentElevationDeg =
+      (Math.atan2(building.heightMeters, blockingDistance) * 180) / Math.PI;
+    const elevationClearance = apparentElevationDeg - sunAltitudeDeg;
+    if (elevationClearance <= 0) {
+      return;
+    }
+
+    // Combine alignment, proximity and clearance above sun angle into occlusion.
+    const alignment = clamp(1 - crossSun / lateralAllowance, 0, 1);
+    const proximity = clamp(1 - blockingDistance / 220, 0.15, 1);
+    const clearanceFactor = clamp(elevationClearance / 22, 0, 1);
+    const buildingOcclusion =
+      alignment * (0.45 + 0.55 * proximity) * (0.35 + 0.65 * clearanceFactor);
+
+    // Merge multiple blockers so several medium blockers can still add up.
+    combinedOcclusion = 1 - (1 - combinedOcclusion) * (1 - buildingOcclusion);
   });
 
-  return Math.max(0, Math.min(1, strongestRisk));
+  return clamp(combinedOcclusion, 0, 1);
 }
 
 function shadeRiskLabel(shadeRisk) {
@@ -555,7 +572,7 @@ function calculateSunRank(restaurants, dateTime, cloudCover, buildings) {
         shadeRiskLabel: shadeRiskLabel(shadeRisk),
         distance,
         directionText: getDirectionText(bearing),
-        note: "Solpoängen uppskattas från solhöjd, molnighet och om byggnader i solens riktning kan kasta skugga på platsen.",
+        note: "Solpoängen uppskattas från solhöjd, molnighet och en siktlinje-modell som testar om byggnader blockerar solen från platsen.",
       };
     })
     .sort((a, b) => b.sunScore - a.sunScore || a.distance - b.distance);
