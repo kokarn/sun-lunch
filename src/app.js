@@ -7,20 +7,13 @@ const OFFICE = {
 const statusText = document.querySelector("#statusText");
 const sunText = document.querySelector("#sunText");
 const weatherText = document.querySelector("#weatherText");
-const dateInput = document.querySelector("#dateInput");
-const timeInput = document.querySelector("#timeInput");
+const nowText = document.querySelector("#nowText");
 const radiusInput = document.querySelector("#radiusInput");
 const loadButton = document.querySelector("#loadButton");
 const resultsList = document.querySelector("#results");
 
 function twoDigits(value) {
   return String(value).padStart(2, "0");
-}
-
-function formatLocalDate(date) {
-  return `${date.getFullYear()}-${twoDigits(date.getMonth() + 1)}-${twoDigits(
-    date.getDate()
-  )}`;
 }
 
 function getStockholmDateTimeParts(date) {
@@ -39,12 +32,9 @@ function getStockholmDateTimeParts(date) {
     date: `${get("year")}-${get("month")}-${get("day")}`,
     hour: get("hour"),
     minute: get("minute"),
+    second: get("second"),
   };
 }
-
-const today = new Date();
-dateInput.value = formatLocalDate(today);
-timeInput.value = "12:00";
 
 const map = L.map("map").setView([OFFICE.lat, OFFICE.lon], 15);
 map.createPane("mutedBase");
@@ -126,10 +116,22 @@ function angleDifference(a, b) {
   return raw > 180 ? 360 - raw : raw;
 }
 
-function getSelectedDateTime() {
-  const dateStr = dateInput.value;
-  const timeStr = timeInput.value || "12:00";
-  return new Date(`${dateStr}T${timeStr}:00`);
+function getCurrentDateTime() {
+  return new Date();
+}
+
+function formatStockholmNowText(date) {
+  const stockholmFormatter = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Europe/Stockholm",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+  return stockholmFormatter.format(date).replace(",", "");
 }
 
 function parseHeightMeters(tags) {
@@ -399,7 +401,7 @@ async function fetchCloudCover(dateTime) {
   const data = await response.json();
   const times = data?.hourly?.time ?? [];
   const clouds = data?.hourly?.cloud_cover ?? [];
-  const target = `${stockholmParts.date}T${stockholmParts.hour}`;
+  const target = `${stockholmParts.date}T${stockholmParts.hour}:${stockholmParts.minute}`;
 
   const foundIndex = times.findIndex((timeStr) => timeStr.startsWith(target));
   if (foundIndex >= 0) {
@@ -572,9 +574,15 @@ async function loadAndRender() {
     statusText.textContent = "Hämtar restauranger...";
     weatherText.textContent = "";
     sunText.textContent = "";
+    if (nowText) {
+      nowText.textContent = "";
+    }
 
     const radius = Number(radiusInput.value);
-    const dateTime = getSelectedDateTime();
+    const dateTime = getCurrentDateTime();
+    if (nowText) {
+      nowText.textContent = `Nu (Europe/Stockholm): ${formatStockholmNowText(dateTime)}`;
+    }
     drawRadiusCircle(radius);
     const { sunAzimuthDeg, sunAltitudeDeg } = getSunGeometry(dateTime);
     drawSunDirection(sunAzimuthDeg, sunAltitudeDeg, radius);

@@ -19,23 +19,12 @@ body {
   padding: 1.4rem 1.4rem 2rem;
 }
 
-header h1 {
-  margin-bottom: 0.25rem;
-  font-size: clamp(1.5rem, 2vw + 1rem, 2.25rem);
-  letter-spacing: -0.01em;
-}
-
-header p {
-  margin-top: 0;
-  color: #3f526d;
-}
-
 .controls {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 0.9rem;
   align-items: end;
-  margin: 1rem 0;
+  margin: 0 0 1rem;
   padding: 0.95rem;
   background: rgb(255 255 255 / 90%);
   border-radius: 14px;
@@ -206,6 +195,6 @@ button:hover {
   }
 
   .controls {
-    grid-template-columns: repeat(2, minmax(130px, 1fr));
+    grid-template-columns: 1fr;
   }
 }

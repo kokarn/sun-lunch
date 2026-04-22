@@ -14,23 +14,7 @@
   </head>
   <body>
     <main class="app">
-      <header>
-        <h1>Sol-lunch vid Vasagatan 7</h1>
-        <p>
-          Hitta restauranger i närheten och se vilka som sannolikt har sol vid
-          lunchtid.
-        </p>
-      </header>
-
       <section class="controls">
-        <label>
-          Datum
-          <input id="dateInput" type="date" />
-        </label>
-        <label>
-          Tid
-          <input id="timeInput" type="time" value="12:00" />
-        </label>
         <label>
           Radie (meter)
           <select id="radiusInput">
@@ -39,10 +23,11 @@
             <option value="1600">1600</option>
           </select>
         </label>
-        <button id="loadButton" type="button">Uppdatera restauranger</button>
+        <button id="loadButton" type="button">Uppdatera med aktuell tid</button>
       </section>
 
       <section class="info">
+        <p id="currentTimeText"></p>
         <p id="statusText">Laddar kartan...</p>
         <p id="sunText"></p>
         <p id="weatherText"></p>
