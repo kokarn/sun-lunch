@@ -81,6 +81,36 @@ button:hover {
   margin-bottom: 1rem;
 }
 
+.map-legend {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.8rem;
+  font-size: 0.9rem;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.legend-dot {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px #62758f;
+}
+
+.legend-dot.top {
+  background: #2fb363;
+}
+
+.legend-dot.filtered {
+  background: #7a8899;
+}
+
 #results {
   background: #ffffff;
   padding: 1rem 1.25rem;
